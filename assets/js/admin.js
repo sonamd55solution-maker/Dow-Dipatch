@@ -740,3 +740,66 @@
     let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
   }
 })();
+
+/* =====================================================
+   GOOGLE SHEETS — Bulk Sync from Admin Panel
+   Syncs all bookings currently visible in the filter
+   to the Google Sheet via Apps Script.
+======================================================*/
+(function attachSheetsSyncBtn() {
+  // Inject "Sync to Google Sheets" button next to Export Excel
+  const cardHdr = document.querySelector('#tab-bookings .card-hdr');
+  if (!cardHdr) return;
+  const syncBtn = document.createElement('button');
+  syncBtn.className = 'btn btn-secondary btn-sm';
+  syncBtn.id = 'sync-sheets-btn';
+  syncBtn.textContent = '☁ Sync to Google Sheets';
+  cardHdr.appendChild(syncBtn);
+
+  syncBtn.addEventListener('click', async () => {
+    const url = (typeof GOOGLE_CONFIG !== 'undefined') && GOOGLE_CONFIG.scriptUrl;
+    if (!url || url.startsWith('PASTE_')) {
+      DoWUI.showAlert(alertBox, 'Google Script URL not configured in config.js — see setup instructions.', 'error');
+      return;
+    }
+    if (!bookingsCache.length) {
+      DoWUI.showAlert(alertBox, 'No bookings loaded. Apply filters and load data first.', 'error');
+      return;
+    }
+    if (!confirm('Sync ' + bookingsCache.length + ' booking(s) to Google Sheets?\n\nNote: Duplicate rows may appear if these bookings were already synced.')) return;
+
+    syncBtn.disabled = true;
+    syncBtn.textContent = '⏳ Syncing…';
+    DoWUI.clearAlert(alertBox);
+
+    try {
+      // Send in batches of 50 to avoid Apps Script timeout
+      const BATCH = 50;
+      let synced = 0;
+      for (let i = 0; i < bookingsCache.length; i += BATCH) {
+        const batch = bookingsCache.slice(i, i + BATCH).map(b => ({
+          full_dispatch_number: b.full_dispatch_number,
+          recipient:   b.recipient,
+          location:    b.location || 'Thimphu',
+          subject:     b.subject,
+          created_at:  b.created_at,
+        }));
+        const res  = await fetch(url, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ secret: GOOGLE_CONFIG.secret, bookings: batch }),
+        });
+        const json = await res.json();
+        if (!json.success) throw new Error(json.error || 'Sync failed');
+        synced += batch.length;
+        syncBtn.textContent = '⏳ Synced ' + synced + '/' + bookingsCache.length + '…';
+      }
+      DoWUI.showAlert(alertBox, '✓ ' + synced + ' booking(s) synced to Google Sheets successfully.', 'success');
+    } catch (err) {
+      DoWUI.showAlert(alertBox, 'Google Sheets sync failed: ' + err.message, 'error');
+    } finally {
+      syncBtn.disabled = false;
+      syncBtn.textContent = '☁ Sync to Google Sheets';
+    }
+  });
+})();
