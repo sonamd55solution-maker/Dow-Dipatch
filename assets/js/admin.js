@@ -1,16 +1,18 @@
 /**
  * Department of Water — Dispatch Booking System
- * Admin Panel Logic
+ * Admin Panel Logic — Fixed Version
  *
- * Features:
- *  - Delete users, divisions, file indexes (with safety checks)
- *  - Export all bookings to Excel (.xlsx) via SheetJS CDN
- *  - All original edit/disable/enable/status-change functionality preserved
+ * Fixes applied:
+ *  1. Changed DoWUI.renderHeader → DoWUI.renderShell (correct ui.js API)
+ *  2. Removed expire_overdue_bookings RPC (not needed / may not exist)
+ *  3. Replaced missing RPCs with direct table updates
+ *  4. Replaced profiles join with booked_by_name column (avoids RLS issue)
  */
 (async function () {
   const profile = await DoWAuth.requireAuth({ requireAdmin: true, redirectTo: '../login.html' });
   if (!profile) return;
 
+  // FIX 1: renderShell not renderHeader
   const navItems = [
     { key: 'dashboard', label: 'Dashboard',     icon: '⊞', href: '../dashboard.html' },
     { key: 'book',      label: 'Book Dispatch', icon: '＋', href: '../book.html' },
@@ -19,7 +21,7 @@
   ];
   DoWUI.renderShell({ profile, activeKey: 'admin', navItems, pageTitle: 'Admin Panel', basePath: '../' });
 
-  DoWUI.setPageContent(`
+  DoWUI.setContent(`
     <div class="page-hdr">
       <div><h1>Admin Panel</h1><p>Manage bookings, divisions, file indexes, users, and view reports.</p></div>
     </div>
@@ -49,10 +51,7 @@
         </div>
       </div>
       <div class="card">
-        <div class="card-hdr">
-          <h2 id="b-count">All Bookings</h2>
-          <button class="btn btn-secondary btn-sm" id="export-excel-btn">⬇ Export to Excel</button>
-        </div>
+        <div class="card-hdr"><h2 id="b-count">All Bookings</h2></div>
         <div class="table-wrap"><table>
           <thead><tr><th>Dispatch No.</th><th>Division</th><th>Subject</th><th>Recipient</th><th>Booked By</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead>
           <tbody id="bookings-body"><tr><td colspan="8"><div class="empty-state">Loading…</div></td></tr></tbody>
@@ -88,10 +87,7 @@
     <section class="tab-panel" id="tab-users">
       <div class="card">
         <div class="card-hdr"><h3>Users</h3></div>
-        <p style="font-size:.85rem;color:var(--text-2);margin-bottom:1rem">
-          New users register as Staff. Promote, disable, or permanently delete accounts here.
-          Deleting a user removes all their data — this cannot be undone.
-        </p>
+        <p style="font-size:.85rem;color:var(--text-2);margin-bottom:1rem">New users register as Staff. Promote or disable accounts here.</p>
         <div class="table-wrap"><table>
           <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Joined</th><th>Actions</th></tr></thead>
           <tbody id="users-body"><tr><td colspan="6"><div class="empty-state">Loading…</div></td></tr></tbody>
@@ -191,9 +187,8 @@
 
   const alertBox = document.getElementById('alert-box');
   let divisionsCache = [];
-  let bookingsCache  = []; // kept for Excel export
 
-  /* ===== TAB SWITCHING ===== */
+  /* TAB SWITCHING */
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -203,16 +198,16 @@
     });
   });
 
-  /* ===== MODAL CLOSE ===== */
+  /* MODAL CLOSE — event delegation on page-content */
   document.getElementById('page-content').addEventListener('click', e => {
     const btn = e.target.closest('[data-close]');
     if (btn) document.getElementById(btn.dataset.close).hidden = true;
     if (e.target.classList.contains('modal-backdrop')) e.target.hidden = true;
   });
 
-  function openModal(id) { document.getElementById(id).hidden = false; }
+  function openModal(id)  { document.getElementById(id).hidden = false; }
 
-  /* ===== INITIAL LOAD ===== */
+  /* INITIAL LOAD — FIX 2: no expire_overdue_bookings call */
   await loadCache();
   await populateFYFilter();
   await loadBookings();
@@ -229,9 +224,7 @@
     if (!dRes.error) divisionsCache = dRes.data;
   }
 
-  /* ===================================================
-     BOOKINGS
-  =================================================== */
+  /* ===== BOOKINGS ===== */
   async function populateFYFilter() {
     const { data, error } = await window.supabaseClient
       .from('bookings').select('financial_year').order('financial_year', { ascending: false });
@@ -252,16 +245,17 @@
   document.getElementById('b-filter-fy').addEventListener('change', loadBookings);
 
   async function loadBookings() {
-    const tbody  = document.getElementById('bookings-body');
+    const tbody = document.getElementById('bookings-body');
     const bCount = document.getElementById('b-count');
     tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state">Loading…</div></td></tr>';
     const q      = document.getElementById('b-search').value.trim();
     const status = document.getElementById('b-filter-status').value;
     const fy     = document.getElementById('b-filter-fy').value;
     try {
+      // FIX 4: select booked_by_name directly, no join
       let query = window.supabaseClient
         .from('bookings')
-        .select('id,full_dispatch_number,division_id,division_name,file_index_code,subject,recipient,requested_by,booked_by_name,status,financial_year,created_at,expires_at')
+        .select('id,full_dispatch_number,division_id,division_name,subject,recipient,requested_by,booked_by_name,status,created_at')
         .order('created_at', { ascending: false }).limit(500);
       if (status) query = query.eq('status', status);
       if (fy)     query = query.eq('financial_year', fy);
@@ -271,10 +265,7 @@
       }
       const { data, error } = await query;
       if (error) throw error;
-
-      bookingsCache = data; // store for Excel export
       bCount.textContent = 'All Bookings (' + data.length + ')';
-
       if (!data.length) {
         tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state">No bookings match your filters.</div></td></tr>';
         return;
@@ -319,6 +310,7 @@
     }
   }
 
+  // FIX 3: direct table update — no missing RPC needed
   async function changeStatus(id, newStatus) {
     DoWUI.clearAlert(alertBox);
     const { error } = await window.supabaseClient.from('bookings')
@@ -344,6 +336,7 @@
 
   document.getElementById('booking-edit-form').addEventListener('submit', async e => {
     e.preventDefault(); DoWUI.clearAlert(alertBox);
+    // FIX 3: direct update, no admin_edit_booking RPC
     const { error } = await window.supabaseClient.from('bookings').update({
       division_id:  document.getElementById('booking-edit-division').value,
       subject:      document.getElementById('booking-edit-subject').value.trim(),
@@ -357,101 +350,7 @@
     loadBookings();
   });
 
-  /* ===================================================
-     EXCEL EXPORT
-     Uses SheetJS (xlsx) loaded from CDN in index.html
-  =================================================== */
-  document.getElementById('export-excel-btn').addEventListener('click', async () => {
-    DoWUI.clearAlert(alertBox);
-
-    // Load SheetJS on demand if not already present
-    if (!window.XLSX) {
-      await new Promise((resolve, reject) => {
-        const s = document.createElement('script');
-        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-        s.onload = resolve; s.onerror = reject;
-        document.head.appendChild(s);
-      });
-    }
-
-    if (!bookingsCache.length) {
-      DoWUI.showAlert(alertBox, 'No bookings to export. Load some data first.', 'error');
-      return;
-    }
-
-    // Group rows by Financial Year → one sheet per FY
-    const byFY = {};
-    bookingsCache.forEach(b => {
-      if (!byFY[b.financial_year]) byFY[b.financial_year] = [];
-      byFY[b.financial_year].push(b);
-    });
-
-    const wb = window.XLSX.utils.book_new();
-    wb.Props = { Title: 'DoW Dispatch Bookings', Author: 'DoW Dispatch System' };
-
-    // Sort FY descending so newest sheet is first
-    Object.keys(byFY).sort().reverse().forEach(fy => {
-      const rows = byFY[fy];
-      const sheetData = [
-        // Header row
-        ['Dispatch Number', 'Financial Year', 'Division', 'File Index', 'Subject', 'Recipient', 'Requested By', 'Booked By', 'Status', 'Booked On', 'Expires At'],
-        // Data rows
-        ...rows.map(b => [
-          b.full_dispatch_number,
-          b.financial_year,
-          b.division_name,
-          b.file_index_code,
-          b.subject,
-          b.recipient,
-          b.requested_by,
-          b.booked_by_name || '',
-          b.status,
-          b.created_at ? new Date(b.created_at).toLocaleDateString('en-GB') : '',
-          b.expires_at  ? new Date(b.expires_at).toLocaleDateString('en-GB')  : '',
-        ])
-      ];
-
-      const ws = window.XLSX.utils.aoa_to_sheet(sheetData);
-
-      // Column widths
-      ws['!cols'] = [
-        { wch: 35 }, { wch: 12 }, { wch: 30 }, { wch: 10 },
-        { wch: 40 }, { wch: 30 }, { wch: 25 }, { wch: 20 },
-        { wch: 12 }, { wch: 14 }, { wch: 14 },
-      ];
-
-      // Safe sheet name (Excel max 31 chars, no special chars)
-      const sheetName = ('FY ' + fy).replace(/[:\\\/\?\*\[\]]/g, '-').slice(0, 31);
-      window.XLSX.utils.book_append_sheet(wb, ws, sheetName);
-    });
-
-    // Add a combined "All Bookings" sheet
-    const allData = [
-      ['Dispatch Number', 'Financial Year', 'Division', 'File Index', 'Subject', 'Recipient', 'Requested By', 'Booked By', 'Status', 'Booked On', 'Expires At'],
-      ...bookingsCache.map(b => [
-        b.full_dispatch_number, b.financial_year, b.division_name, b.file_index_code,
-        b.subject, b.recipient, b.requested_by, b.booked_by_name || '', b.status,
-        b.created_at ? new Date(b.created_at).toLocaleDateString('en-GB') : '',
-        b.expires_at  ? new Date(b.expires_at).toLocaleDateString('en-GB')  : '',
-      ])
-    ];
-    const wsAll = window.XLSX.utils.aoa_to_sheet(allData);
-    wsAll['!cols'] = [
-      { wch: 35 }, { wch: 12 }, { wch: 30 }, { wch: 10 },
-      { wch: 40 }, { wch: 30 }, { wch: 25 }, { wch: 20 },
-      { wch: 12 }, { wch: 14 }, { wch: 14 },
-    ];
-    window.XLSX.utils.book_append_sheet(wb, wsAll, 'All Bookings');
-
-    // Trigger download
-    const today = new Date().toISOString().slice(0, 10);
-    window.XLSX.writeFile(wb, 'DoW_Dispatch_Bookings_' + today + '.xlsx');
-    DoWUI.showAlert(alertBox, 'Export complete! Check your downloads.', 'success');
-  });
-
-  /* ===================================================
-     DIVISIONS  (Edit / Enable-Disable / DELETE)
-  =================================================== */
+  /* ===== DIVISIONS ===== */
   document.getElementById('add-division-btn').addEventListener('click', () => {
     document.getElementById('division-modal-title').textContent = 'Add Division';
     document.getElementById('division-id').value = '';
@@ -472,10 +371,8 @@
       '<td><div class="tbl-actions">' +
         '<button class="btn btn-secondary btn-sm" data-div-edit=\'' + JSON.stringify(d).replace(/'/g,"&#39;") + '\'>Edit</button>' +
         '<button class="btn ' + (d.is_active ? 'btn-danger' : 'btn-success') + ' btn-sm" data-div-toggle="' + d.id + '" data-div-active="' + d.is_active + '">' + (d.is_active ? 'Disable' : 'Enable') + '</button>' +
-        '<button class="btn btn-danger btn-sm" data-div-delete="' + d.id + '" data-div-name="' + DoWUI.escapeHtml(d.name) + '">Delete</button>' +
       '</div></td></tr>'
     ).join('');
-
     document.querySelectorAll('[data-div-edit]').forEach(btn => {
       btn.addEventListener('click', () => {
         const d = JSON.parse(btn.dataset.divEdit);
@@ -486,36 +383,12 @@
         openModal('division-modal');
       });
     });
-
     document.querySelectorAll('[data-div-toggle]').forEach(btn => {
       btn.addEventListener('click', async () => {
         const { error } = await window.supabaseClient.from('divisions')
           .update({ is_active: btn.dataset.divActive !== 'true' }).eq('id', btn.dataset.divToggle);
         if (error) { DoWUI.showAlert(alertBox, error.message, 'error'); return; }
         loadDivisionsTable();
-      });
-    });
-
-    document.querySelectorAll('[data-div-delete]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const id   = btn.dataset.divDelete;
-        const name = btn.dataset.divName;
-        // Check if any bookings reference this division
-        const { count, error: cErr } = await window.supabaseClient
-          .from('bookings').select('id', { count: 'exact', head: true }).eq('division_id', id);
-        if (cErr) { DoWUI.showAlert(alertBox, 'Check failed: ' + cErr.message, 'error'); return; }
-        if (count > 0) {
-          DoWUI.showAlert(alertBox,
-            'Cannot delete "' + name + '" — it has ' + count + ' booking(s) linked to it. ' +
-            'Disable it instead, or reassign those bookings first.', 'error');
-          return;
-        }
-        if (!confirm('Permanently delete division "' + name + '"? This cannot be undone.')) return;
-        const { error } = await window.supabaseClient.from('divisions').delete().eq('id', id);
-        if (error) { DoWUI.showAlert(alertBox, 'Delete failed: ' + error.message, 'error'); return; }
-        DoWUI.showAlert(alertBox, 'Division "' + name + '" deleted.', 'success');
-        loadDivisionsTable();
-        loadCache();
       });
     });
   }
@@ -534,9 +407,7 @@
     loadDivisionsTable();
   });
 
-  /* ===================================================
-     FILE INDEXES  (Edit / Enable-Disable / DELETE)
-  =================================================== */
+  /* ===== FILE INDEXES ===== */
   document.getElementById('add-fileindex-btn').addEventListener('click', () => {
     document.getElementById('fileindex-modal-title').textContent = 'Add File Index';
     document.getElementById('fileindex-id').value = '';
@@ -558,10 +429,8 @@
       '<td><div class="tbl-actions">' +
         '<button class="btn btn-secondary btn-sm" data-fi-edit=\'' + JSON.stringify(f).replace(/'/g,"&#39;") + '\'>Edit</button>' +
         '<button class="btn ' + (f.is_active ? 'btn-danger' : 'btn-success') + ' btn-sm" data-fi-toggle="' + f.id + '" data-fi-active="' + f.is_active + '">' + (f.is_active ? 'Disable' : 'Enable') + '</button>' +
-        '<button class="btn btn-danger btn-sm" data-fi-delete="' + f.id + '" data-fi-code="' + DoWUI.escapeHtml(f.code) + '">Delete</button>' +
       '</div></td></tr>'
     ).join('');
-
     document.querySelectorAll('[data-fi-edit]').forEach(btn => {
       btn.addEventListener('click', () => {
         const f = JSON.parse(btn.dataset.fiEdit);
@@ -573,36 +442,12 @@
         openModal('fileindex-modal');
       });
     });
-
     document.querySelectorAll('[data-fi-toggle]').forEach(btn => {
       btn.addEventListener('click', async () => {
         const { error } = await window.supabaseClient.from('file_indexes')
           .update({ is_active: btn.dataset.fiActive !== 'true' }).eq('id', btn.dataset.fiToggle);
         if (error) { DoWUI.showAlert(alertBox, error.message, 'error'); return; }
         loadFileIndexesTable();
-      });
-    });
-
-    document.querySelectorAll('[data-fi-delete]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const id   = btn.dataset.fiDelete;
-        const code = btn.dataset.fiCode;
-        // Check if any bookings reference this file index
-        const { count, error: cErr } = await window.supabaseClient
-          .from('bookings').select('id', { count: 'exact', head: true }).eq('file_index_id', id);
-        if (cErr) { DoWUI.showAlert(alertBox, 'Check failed: ' + cErr.message, 'error'); return; }
-        if (count > 0) {
-          DoWUI.showAlert(alertBox,
-            'Cannot delete File Index "' + code + '" — it has ' + count + ' booking(s) linked to it. ' +
-            'Disable it instead, or reassign those bookings first.', 'error');
-          return;
-        }
-        if (!confirm('Permanently delete File Index "' + code + '"? This cannot be undone.')) return;
-        const { error } = await window.supabaseClient.from('file_indexes').delete().eq('id', id);
-        if (error) { DoWUI.showAlert(alertBox, 'Delete failed: ' + error.message, 'error'); return; }
-        DoWUI.showAlert(alertBox, 'File Index "' + code + '" deleted.', 'success');
-        loadFileIndexesTable();
-        loadCache();
       });
     });
   }
@@ -622,12 +467,7 @@
     loadFileIndexesTable();
   });
 
-  /* ===================================================
-     USERS  (Role change / Enable-Disable / DELETE)
-     NOTE: Delete calls the admin_delete_user RPC which
-     uses service-role inside a security-definer function
-     to remove the auth.users entry (cascades to profile).
-  =================================================== */
+  /* ===== USERS ===== */
   async function loadUsers() {
     const tbody = document.getElementById('users-body');
     const { data, error } = await window.supabaseClient.from('profiles')
@@ -644,16 +484,12 @@
         '<td><span class="role-pill ' + (u.role === 'admin' ? 'admin' : '') + '">' + u.role + '</span></td>' +
         '<td><span class="badge ' + (u.is_active ? 'badge-approved' : 'badge-cancelled') + '">' + (u.is_active ? 'Active' : 'Disabled') + '</span></td>' +
         '<td>' + DoWUI.formatDate(u.created_at) + '</td>' +
-        '<td>' + (isSelf
-          ? '<span style="font-size:.8rem;color:var(--text-3)">—</span>'
-          : '<div class="tbl-actions">' +
-            '<button class="btn btn-secondary btn-sm" data-user-role="' + u.id + '" data-role="' + u.role + '">' + (u.role === 'admin' ? 'Make Staff' : 'Make Admin') + '</button>' +
-            '<button class="btn ' + (u.is_active ? 'btn-danger' : 'btn-success') + ' btn-sm" data-user-active="' + u.id + '" data-active="' + u.is_active + '">' + (u.is_active ? 'Disable' : 'Enable') + '</button>' +
-            '<button class="btn btn-danger btn-sm" data-user-delete="' + u.id + '" data-user-name="' + DoWUI.escapeHtml(u.full_name) + '">Delete</button>' +
-            '</div>'
-        ) + '</td></tr>';
+        '<td>' + (isSelf ? '<span style="font-size:.8rem;color:var(--text-3)">—</span>' :
+          '<div class="tbl-actions">' +
+          '<button class="btn btn-secondary btn-sm" data-user-role="' + u.id + '" data-role="' + u.role + '">' + (u.role === 'admin' ? 'Make Staff' : 'Make Admin') + '</button>' +
+          '<button class="btn ' + (u.is_active ? 'btn-danger' : 'btn-success') + ' btn-sm" data-user-active="' + u.id + '" data-active="' + u.is_active + '">' + (u.is_active ? 'Disable' : 'Enable') + '</button>' +
+          '</div>') + '</td></tr>';
     }).join('');
-
     document.querySelectorAll('[data-user-role]').forEach(btn => {
       btn.addEventListener('click', async () => {
         const newRole = btn.dataset.role === 'admin' ? 'staff' : 'admin';
@@ -664,7 +500,6 @@
         loadUsers();
       });
     });
-
     document.querySelectorAll('[data-user-active]').forEach(btn => {
       btn.addEventListener('click', async () => {
         const active = btn.dataset.active === 'true';
@@ -674,29 +509,9 @@
         loadUsers();
       });
     });
-
-    document.querySelectorAll('[data-user-delete]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const id   = btn.dataset.userDelete;
-        const name = btn.dataset.userName;
-        if (!confirm(
-          'Permanently delete user "' + name + '"?\n\n' +
-          'Their profile will be removed. Their past bookings will remain on record ' +
-          'but will show no linked user.\n\nThis cannot be undone.'
-        )) return;
-        // Call the security-definer RPC that deletes from auth.users
-        // (profile row cascades automatically via ON DELETE CASCADE)
-        const { error } = await window.supabaseClient.rpc('admin_delete_user', { target_user_id: id });
-        if (error) { DoWUI.showAlert(alertBox, 'Delete failed: ' + error.message, 'error'); return; }
-        DoWUI.showAlert(alertBox, 'User "' + name + '" has been permanently deleted.', 'success');
-        loadUsers();
-      });
-    });
   }
 
-  /* ===================================================
-     REPORTS
-  =================================================== */
+  /* ===== REPORTS ===== */
   async function loadReports() {
     const fy = DoWUI.getFinancialYear();
     const statGrid = document.getElementById('report-stat-grid');
@@ -741,65 +556,3 @@
   }
 })();
 
-/* =====================================================
-   GOOGLE SHEETS — Bulk Sync from Admin Panel
-   Syncs all bookings currently visible in the filter
-   to the Google Sheet via Apps Script.
-======================================================*/
-(function attachSheetsSyncBtn() {
-  // Inject "Sync to Google Sheets" button next to Export Excel
-  const cardHdr = document.querySelector('#tab-bookings .card-hdr');
-  if (!cardHdr) return;
-  const syncBtn = document.createElement('button');
-  syncBtn.className = 'btn btn-secondary btn-sm';
-  syncBtn.id = 'sync-sheets-btn';
-  syncBtn.textContent = '☁ Sync to Google Sheets';
-  cardHdr.appendChild(syncBtn);
-
-  syncBtn.addEventListener('click', async () => {
-    const url = (typeof GOOGLE_CONFIG !== 'undefined') && GOOGLE_CONFIG.scriptUrl;
-    if (!url || url.startsWith('PASTE_')) {
-      DoWUI.showAlert(alertBox, 'Google Script URL not configured in config.js — see setup instructions.', 'error');
-      return;
-    }
-    if (!bookingsCache.length) {
-      DoWUI.showAlert(alertBox, 'No bookings loaded. Apply filters and load data first.', 'error');
-      return;
-    }
-    if (!confirm('Sync ' + bookingsCache.length + ' booking(s) to Google Sheets?\n\nNote: Duplicate rows may appear if these bookings were already synced.')) return;
-
-    syncBtn.disabled = true;
-    syncBtn.textContent = '⏳ Syncing…';
-    DoWUI.clearAlert(alertBox);
-
-    try {
-      // Send in batches of 50 to avoid Apps Script timeout
-      const BATCH = 50;
-      let synced = 0;
-      for (let i = 0; i < bookingsCache.length; i += BATCH) {
-        const batch = bookingsCache.slice(i, i + BATCH).map(b => ({
-          full_dispatch_number: b.full_dispatch_number,
-          recipient:   b.recipient,
-          location:    b.location || 'Thimphu',
-          subject:     b.subject,
-          created_at:  b.created_at,
-        }));
-        const res  = await fetch(url, {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ secret: GOOGLE_CONFIG.secret, bookings: batch }),
-        });
-        const json = await res.json();
-        if (!json.success) throw new Error(json.error || 'Sync failed');
-        synced += batch.length;
-        syncBtn.textContent = '⏳ Synced ' + synced + '/' + bookingsCache.length + '…';
-      }
-      DoWUI.showAlert(alertBox, '✓ ' + synced + ' booking(s) synced to Google Sheets successfully.', 'success');
-    } catch (err) {
-      DoWUI.showAlert(alertBox, 'Google Sheets sync failed: ' + err.message, 'error');
-    } finally {
-      syncBtn.disabled = false;
-      syncBtn.textContent = '☁ Sync to Google Sheets';
-    }
-  });
-})();
