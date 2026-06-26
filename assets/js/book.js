@@ -1,6 +1,8 @@
 /**
  * Department of Water — Dispatch Booking System
  * Book Dispatch Page Logic
+ * — Location field included
+ * — Auto-syncs each new booking to Google Sheets via Apps Script
  */
 (async function () {
   const profile = await DoWAuth.requireAuth({ redirectTo: 'login.html' });
@@ -57,11 +59,11 @@
           </div>
           <div class="field">
             <label for="recipient">Recipient <span style="color:var(--color-danger)">*</span></label>
-            <input type="text" id="recipient" placeholder="e.g. Dzongkhag Administration, Thimphu" required maxlength="200" />
+            <input type="text" id="recipient" placeholder="e.g. Dasho Dzongda, Gup Chang Geog" required maxlength="200" />
           </div>
           <div class="field">
             <label for="location">Location <span style="color:var(--color-danger)">*</span></label>
-            <input type="text" id="location" placeholder="e.g. Thimphu, Punakha" required maxlength="100" value="Thimphu" />
+            <input type="text" id="location" placeholder="e.g. Thimphu, Punakha, Different Agencies" required maxlength="100" value="Thimphu" />
           </div>
           <div class="field">
             <label for="requested-by">Requested By <span style="color:var(--color-danger)">*</span></label>
@@ -88,6 +90,7 @@
         <p class="text-secondary" style="font-size:.9rem">
           This number is reserved for <strong>7 days</strong>. It will expire automatically if not approved.
         </p>
+        <div id="sheets-status" style="margin-top:.75rem;font-size:.82rem;color:var(--text-2)"></div>
         <div style="display:flex;gap:.75rem;justify-content:center;margin-top:1.25rem;flex-wrap:wrap">
           <button class="btn btn-primary" id="book-another-btn">Book Another</button>
           <a href="search.html" class="btn btn-secondary">View My Bookings</a>
@@ -96,10 +99,11 @@
     </div>
   `);
 
-  const alertBox    = document.getElementById('alert-box');
-  const form        = document.getElementById('booking-form');
-  const successCard = document.getElementById('success-card');
-  const bookBtn     = document.getElementById('book-btn');
+  const alertBox     = document.getElementById('alert-box');
+  const form         = document.getElementById('booking-form');
+  const successCard  = document.getElementById('success-card');
+  const bookBtn      = document.getElementById('book-btn');
+  const sheetsStatus = document.getElementById('sheets-status');
 
   document.getElementById('fy-display').textContent = DoWUI.getFinancialYear();
 
@@ -134,16 +138,20 @@
     e.preventDefault();
     DoWUI.clearAlert(alertBox);
 
-    const division_id   = document.getElementById('division').value;
-    const file_index_id = document.getElementById('file-index').value;
+    const divisionEl    = document.getElementById('division');
+    const fileIndexEl   = document.getElementById('file-index');
+    const division_id   = divisionEl.value;
+    const file_index_id = fileIndexEl.value;
     const subject       = document.getElementById('subject').value.trim();
     const recipient     = document.getElementById('recipient').value.trim();
     const location      = document.getElementById('location').value.trim() || 'Thimphu';
     const requested_by  = document.getElementById('requested-by').value.trim();
 
     if (!division_id || !file_index_id || !subject || !recipient || !location || !requested_by) {
-      DoWUI.showAlert(alertBox, 'Please fill in all required fields.', 'error'); return;
+      DoWUI.showAlert(alertBox, 'Please fill in all required fields.', 'error');
+      return;
     }
+
     setLoading(true);
 
     const { data, error } = await window.supabaseClient.rpc('book_dispatch', {
@@ -154,18 +162,52 @@
       p_requested_by:  requested_by,
       p_location:      location,
     });
+
     setLoading(false);
 
     if (error) {
-      DoWUI.showAlert(alertBox, 'Booking failed: ' + error.message, 'error'); return;
+      DoWUI.showAlert(alertBox, 'Booking failed: ' + error.message, 'error');
+      return;
     }
 
     const booking = Array.isArray(data) ? data[0] : data;
+
+    // Show success card
     document.getElementById('booking-card').hidden = true;
     successCard.hidden = false;
     document.getElementById('success-number').textContent = booking.full_dispatch_number;
+
+    // ---- Auto-sync to Google Sheets (non-blocking) ----
+    sheetsStatus.textContent = '⏳ Syncing to Google Sheets…';
+
+    syncToGoogleSheet({
+      full_dispatch_number: booking.full_dispatch_number,
+      division:      divisionEl.options[divisionEl.selectedIndex].text,
+      file_index:    fileIndexEl.options[fileIndexEl.selectedIndex].text,
+      subject:       subject,
+      recipient:     recipient,
+      location:      location,
+      requested_by:  requested_by,
+      booked_by:     profile.full_name,
+      financial_year: DoWUI.getFinancialYear(),
+      created_at:    new Date().toISOString(),
+    }).then(result => {
+      if (result.success) {
+        sheetsStatus.textContent = '✓ Added to Google Sheets';
+        sheetsStatus.style.color = 'var(--color-success, green)';
+      } else {
+        sheetsStatus.textContent = '⚠ Google Sheets sync failed — data is still saved in the system.';
+        sheetsStatus.style.color = 'var(--color-warning, orange)';
+        console.warn('Sheets sync error:', result.error);
+      }
+    }).catch(err => {
+      sheetsStatus.textContent = '⚠ Google Sheets sync failed — data is still saved in the system.';
+      sheetsStatus.style.color = 'var(--color-warning, orange)';
+      console.warn('Sheets sync error:', err);
+    });
   });
 
+  /* ---- Book Another ---- */
   document.getElementById('book-another-btn').addEventListener('click', () => {
     form.reset();
     document.getElementById('location').value = 'Thimphu';
@@ -173,6 +215,7 @@
     document.getElementById('dispatch-preview').textContent = 'Generated after booking';
     successCard.hidden = true;
     document.getElementById('booking-card').hidden = false;
+    sheetsStatus.textContent = '';
     DoWUI.clearAlert(alertBox);
   });
 
@@ -180,4 +223,31 @@
     bookBtn.disabled = on;
     document.getElementById('book-btn-text').textContent = on ? 'Booking…' : 'Book Dispatch';
   }
+
+  /**
+   * Send booking data to Google Sheets via Apps Script Web App.
+   * Returns { success: true } or { success: false, error: string }.
+   */
+  async function syncToGoogleSheet(booking) {
+    const url = (typeof GOOGLE_CONFIG !== 'undefined') && GOOGLE_CONFIG.scriptUrl;
+    if (!url || url.startsWith('PASTE_')) {
+      return { success: false, error: 'Google Script URL not configured in config.js' };
+    }
+    try {
+      const res = await fetch(url, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          secret:  GOOGLE_CONFIG.secret,
+          booking: booking,
+        }),
+      });
+      const json = await res.json();
+      if (!json.success) return { success: false, error: json.error || 'Unknown error from Apps Script' };
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  }
 })();
+
