@@ -10,6 +10,6 @@
  * Never put your "service_role" key here.
  */
 const SUPABASE_CONFIG = {
-  url: "https://lvhfidyyqztjdbsfkymh.supabase.co",
-  anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx2aGZpZHl5cXp0amRic2ZreW1oIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMDg4ODIsImV4cCI6MjA5NzY4NDg4Mn0.8e7ZiRcMatYHGPx_vkH5kMhPhCX46zOZKfqt6eXuuGc",
+  url: "https://eveuisszgpfebdrjgkxt.supabase.co",
+  anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV2ZXVpc3N6Z3BmZWJkcmpna3h0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0NTI1MTAsImV4cCI6MjA5ODAyODUxMH0.UdO_pTtu8NhU7DLKPmnGN7GBkt06h926c1LGTI23DS4",
 };
