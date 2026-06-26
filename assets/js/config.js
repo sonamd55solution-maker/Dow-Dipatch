@@ -1,15 +1,13 @@
 /**
  * Department of Water — Dispatch Booking System
- * Supabase Configuration
- *
- * Fill in your Supabase project's URL and public "anon" key below.
- * Find these in your Supabase Dashboard: Project Settings > API.
- *
- * The "anon" key is safe to expose in frontend code — it only allows
- * what your Row Level Security (RLS) policies permit (see schema.sql).
- * Never put your "service_role" key here.
+ * Configuration
  */
 const SUPABASE_CONFIG = {
-  url: "https://eveuisszgpfebdrjgkxt.supabase.co",
-  anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV2ZXVpc3N6Z3BmZWJkcmpna3h0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0NTI1MTAsImV4cCI6MjA5ODAyODUxMH0.UdO_pTtu8NhU7DLKPmnGN7GBkt06h926c1LGTI23DS4",
+  url:     "https://lvhfidyyqztjdbsfkymh.supabase.co",
+  anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx2aGZpZHl5cXp0amRic2ZreW1oIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMDg4ODIsImV4cCI6MjA5NzY4NDg4Mn0.8e7ZiRcMatYHGPx_vkH5kMhPhCX46zOZKfqt6eXuuGc",
+};
+
+const GOOGLE_CONFIG = {
+  scriptUrl: "https://script.google.com/macros/s/AKfycbwoHNd5hvSn9Wvh6-2uF5uhZXnXk_eJxYZLBQC12RGy5uRHXQ47Wv2Ugq7YgFKPvJ50/exec",
+  secret:    "DOW_DISPATCH_SECRET_2025",
 };
