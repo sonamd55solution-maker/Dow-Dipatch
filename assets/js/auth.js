@@ -56,7 +56,7 @@ const DoWAuth = (function () {
 
     if (requireAdmin && profile.role !== "admin") {
       // Staff trying to access an admin page — send them back to their dashboard.
-      window.location.href = "/dashboard.html";
+      window.location.href = redirectTo.replace('login.html', 'dashboard.html').replace('../', '');
       return null;
     }
 
