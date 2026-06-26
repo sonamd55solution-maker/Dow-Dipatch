@@ -1,7 +1,7 @@
 /**
  * Department of Water — Dispatch Booking System
  * Book Dispatch Page Logic
- * — Added Location field
+ * — Includes Location field
  * — Auto-syncs each new booking to Google Sheets via Apps Script
  */
 (async function () {
@@ -137,6 +137,7 @@
   form.addEventListener('submit', async e => {
     e.preventDefault();
     DoWUI.clearAlert(alertBox);
+
     const division_id   = document.getElementById('division').value;
     const file_index_id = document.getElementById('file-index').value;
     const subject       = document.getElementById('subject').value.trim();
@@ -145,21 +146,36 @@
     const requested_by  = document.getElementById('requested-by').value.trim();
 
     if (!division_id || !file_index_id || !subject || !recipient || !requested_by) {
-      DoWUI.showAlert(alertBox, 'Please fill in all required fields.', 'error'); return;
+      DoWUI.showAlert(alertBox, 'Please fill in all required fields.', 'error');
+      return;
     }
+
     setLoading(true);
 
+    // ✅ NOW sends p_location to the database function
     const { data, error } = await window.supabaseClient.rpc('book_dispatch', {
-      p_division_id: division_id, p_file_index_id: file_index_id,
-      p_subject: subject, p_recipient: recipient, p_requested_by: requested_by,
+      p_division_id:   division_id,
+      p_file_index_id: file_index_id,
+      p_subject:       subject,
+      p_recipient:     recipient,
+      p_requested_by:  requested_by,
+      p_location:      location,
     });
+
     setLoading(false);
 
     if (error) {
-      DoWUI.showAlert(alertBox, 'Booking failed: ' + error.message, 'error'); return;
+      DoWUI.showAlert(alertBox, 'Booking failed: ' + error.message, 'error');
+      return;
     }
 
     const booking = Array.isArray(data) ? data[0] : data;
+
+    if (!booking || !booking.full_dispatch_number) {
+      DoWUI.showAlert(alertBox, 'Booking failed: No dispatch number returned. Please try again.', 'error');
+      return;
+    }
+
     document.getElementById('booking-card').hidden = true;
     successCard.hidden = false;
     document.getElementById('success-number').textContent = booking.full_dispatch_number;
