@@ -9,15 +9,14 @@
 <body>
 
   <!--
-    Scripts load in this exact order:
+    Scripts load in this EXACT ORDER — do not change:
     1. config.js         — SUPABASE_CONFIG + GOOGLE_CONFIG
     2. supabase CDN      — window.supabase library
     3. supabaseClient.js — creates window.supabaseClient
     4. auth.js           — DoWAuth helpers
     5. ui.js             — DoWUI helpers
-    6. book.js           — this page's logic
+    6. book.js           — this page's logic (runs last)
   -->
-
   <script src="assets/js/config.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <script src="assets/js/supabaseClient.js"></script>
@@ -27,3 +26,4 @@
 
 </body>
 </html>
+
