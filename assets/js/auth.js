@@ -70,4 +70,3 @@ const DoWAuth = (function () {
 
   return { getSession, getProfile, requireAuth, logout };
 })();
-
