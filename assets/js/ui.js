@@ -236,4 +236,3 @@ const DoWUI = (function () {
     setPageContent, setTitle,
   };
 })();
-
