@@ -3,18 +3,27 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Book Dispatch — DoW Dispatch Booking System</title>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Rajdhani:wght@400;500;600;700&family=Exo+2:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="assets/css/styles.css" />
-  <link rel="icon" href="data:,">
+  <title>Book Dispatch — Department of Water</title>
+  <link rel="stylesheet" href="assets/css/style.css" />
 </head>
 <body>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+
+  <!--
+    Scripts load in this exact order:
+    1. config.js         — SUPABASE_CONFIG + GOOGLE_CONFIG
+    2. supabase CDN      — window.supabase library
+    3. supabaseClient.js — creates window.supabaseClient
+    4. auth.js           — DoWAuth helpers
+    5. ui.js             — DoWUI helpers
+    6. book.js           — this page's logic
+  -->
+
   <script src="assets/js/config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <script src="assets/js/supabaseClient.js"></script>
   <script src="assets/js/auth.js"></script>
   <script src="assets/js/ui.js"></script>
   <script src="assets/js/book.js"></script>
+
 </body>
 </html>
-
