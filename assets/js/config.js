@@ -11,4 +11,3 @@ const GOOGLE_CONFIG = {
   scriptUrl: "https://script.google.com/macros/s/AKfycbwoHNd5hvSn9Wvh6-2uF5uhZXnXk_eJxYZLBQC12RGy5uRHXQ47Wv2Ugq7YgFKPvJ50/exec",
   secret:    "DOW_DISPATCH_SECRET_2025",
 };
-
